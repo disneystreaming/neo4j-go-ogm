@@ -27,10 +27,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/neo4j/neo4j-go-driver/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 
-	gogm "github.com/codingfinest/neo4j-go-ogm"
-	. "github.com/codingfinest/neo4j-go-ogm/tests/models"
+	gogm "github.com/disneystreaming/neo4j-go-ogm"
+	. "github.com/disneystreaming/neo4j-go-ogm/tests/models"
 	. "github.com/onsi/gomega"
 )
 
@@ -41,8 +41,8 @@ var config = &gogm.Config{
 	gogm.DEBUG,
 	true}
 
-var ogm = gogm.New(config)
-var session, err = ogm.NewSession(true)
+var ogm = gogm.New(config, nil)
+var session, _ = ogm.NewSession(true, func(a any) gogm.Member { return nil })
 
 const deletedID int64 = -1
 
@@ -466,7 +466,7 @@ func TestDeleteAllRelationships(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(session.DeleteAll(&simpleRelationshipRef, nil)).NotTo(HaveOccurred())
 	countOfSimpleRelationshipsPostDelete, err := session.CountEntitiesOfType(&simpleRelationshipRef)
-
+	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(countOfSimpleRelationships).To(Equal(int64(2)))
 	g.Expect(countOfSimpleRelationshipsPostDelete).To(BeZero())
 
@@ -1120,7 +1120,7 @@ func TestQueryForObject_s(t *testing.T) {
 	g.Expect(session.QueryForObject(&person, "MATCH (person:Person) RETURN person", nil)).To(HaveOccurred())
 	g.Expect(person).To(BeNil())
 
-	g.Expect(session.QueryForObject(&person, "MATCH (person:Person) WHERE person.name = $name RETURN person", map[string]interface{}{"name": "Angela Scope"})).ToNot(HaveOccurred())
+	g.Expect(session.QueryForObject(&person, "MATCH (person:Person) WHERE person.name = $name RETURN person", map[string]any{"name": "Angela Scope"})).ToNot(HaveOccurred())
 	g.Expect(person).To(Equal(angelaScope))
 
 	var persons []*Person
@@ -1228,7 +1228,7 @@ func TestMappedProperties(t *testing.T) {
 	n0 := &Node0{}
 	n0.MapProps = map[string]int{"hello": 8}
 	n0.InvalidIDMapProp = map[int]int{2: 8}
-	n0.MapToInterfaces = map[string]interface{}{"0": true, "1": 2.3, "2": "hello"}
+	n0.MapToInterfaces = map[string]any{"0": true, "1": 2.3, "2": "hello"}
 
 	e := "hello"
 	y := ",world"

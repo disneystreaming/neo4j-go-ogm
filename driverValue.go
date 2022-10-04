@@ -26,9 +26,9 @@ import (
 	"reflect"
 )
 
-func driverValueAsType(driverValue interface{}, structFieldType reflect.Type) interface{} {
+func driverValueAsType(driverValue any, structFieldType reflect.Type) any {
 	switch driverValue.(type) {
-	case []interface{}:
+	case []any:
 		return sliceAsType(driverValue, structFieldType)
 	case int64:
 		return int64AsType(driverValue, structFieldType)
@@ -39,7 +39,7 @@ func driverValueAsType(driverValue interface{}, structFieldType reflect.Type) in
 	}
 }
 
-func sliceAsType(driverValue interface{}, structFieldType reflect.Type) interface{} {
+func sliceAsType(driverValue any, structFieldType reflect.Type) any {
 	switch structFieldType.Kind() {
 	case reflect.Slice:
 		values := reflect.ValueOf(driverValue)
@@ -52,25 +52,41 @@ func sliceAsType(driverValue interface{}, structFieldType reflect.Type) interfac
 		return ptr.Elem().Interface()
 	case reflect.Ptr:
 		ptr := reflect.New(structFieldType.Elem())
-		ptr.Elem().Set(reflect.ValueOf(sliceAsType(driverValue, structFieldType.Elem())))
+		vType := sliceAsType(driverValue, structFieldType.Elem())
+		ptrElem := ptr.Elem()
+		val := reflect.ValueOf(vType)
+		if ptrElem.Type() == val.Type() {
+			ptrElem.Set(val)
+		} else if reflect.PointerTo(ptrElem.Type()) == val.Type() {
+			v := val.Elem().Interface()
+			ptrElem.Set(reflect.ValueOf(v))
+		}
 		return ptr.Interface()
 	default:
 		return driverValue
 	}
 }
 
-func valueAsType(driverValue interface{}, structFieldType reflect.Type) interface{} {
+func valueAsType(driverValue any, structFieldType reflect.Type) any {
 	switch structFieldType.Kind() {
 	case reflect.Ptr:
 		ptr := reflect.New(structFieldType.Elem())
-		ptr.Elem().Set(reflect.ValueOf(valueAsType(driverValue, structFieldType.Elem())))
+		vType := valueAsType(driverValue, structFieldType.Elem())
+		ptrElem := ptr.Elem()
+		val := reflect.ValueOf(vType)
+		if ptrElem.Type() == val.Type() {
+			ptrElem.Set(val)
+		} else if reflect.PointerTo(ptrElem.Type()) == val.Type() {
+			v := val.Elem().Interface()
+			ptrElem.Set(reflect.ValueOf(v))
+		}
 		return ptr.Interface()
 	default:
 		return driverValue
 	}
 }
 
-func int64AsType(driverValue interface{}, structFieldType reflect.Type) interface{} {
+func int64AsType(driverValue any, structFieldType reflect.Type) any {
 	switch structFieldType.Kind() {
 	case reflect.Int:
 		return int(driverValue.(int64))
@@ -89,7 +105,7 @@ func int64AsType(driverValue interface{}, structFieldType reflect.Type) interfac
 	}
 }
 
-func float64AsType(driverValue interface{}, structFieldType reflect.Type) interface{} {
+func float64AsType(driverValue any, structFieldType reflect.Type) any {
 	switch structFieldType.Kind() {
 	case reflect.Float32:
 		return float32(driverValue.(float64))

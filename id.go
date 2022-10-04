@@ -48,7 +48,7 @@ func getCustomIDBackendName(structFields map[string]*reflect.StructField) (strin
 				reflect.Float32, reflect.Float64, reflect.String:
 				return backendName, nil
 			default:
-				return emptyString, errors.New("Invalid custom ID type. Custom ID type must be a primitive")
+				return emptyString, errors.New("invalid custom ID type. Custom ID type must be a primitive")
 
 			}
 

@@ -25,7 +25,7 @@ package gogm
 import (
 	"reflect"
 
-	"github.com/neo4j/neo4j-go-driver/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )
 
 type deleter struct {
@@ -40,16 +40,16 @@ func newDeleter(cypherExecuter *cypherExecuter, store store, eventer eventer, re
 	return &deleter{cypherExecuter, store, eventer, registry, graphFactory}
 }
 
-func (d *deleter) delete(object interface{}) error {
+func (d *deleter) delete(object any) error {
 
 	var (
 		value              = reflect.ValueOf(object)
 		IDer               = getIDer(nil, nil)
 		err                error
-		parameters         = []map[string]interface{}{}
+		parameters         = []map[string]any{}
 		graphDeleteClauses = map[clause][]string{}
 		graphs             []graph
-		record             neo4j.Record
+		record             *neo4j.Record
 	)
 
 	if graphs, err = d.graphFactory.get(value, map[int]bool{labels: true, relatedGraph: true}); err != nil {
@@ -103,10 +103,12 @@ func (d *deleter) delete(object interface{}) error {
 				}
 			}
 		}
-
-		if record, err = neo4j.Single(d.cypherExecuter.exec(cypher, flattenParamters(parameters))); err != nil {
-			return err
+		if records, collectErr := d.cypherExecuter.exec(cypher, flattenParamters(parameters)); collectErr != nil {
+			return collectErr
+		} else if len(records) > 0 {
+			record = records[0]
 		}
+
 		if record != nil {
 			deletedGraphs, updatedGraphs := d.store.delete(storedGraph)
 			for _, updatedGraph := range updatedGraphs {
@@ -121,12 +123,12 @@ func (d *deleter) delete(object interface{}) error {
 	return nil
 }
 
-func (d *deleter) deleteAll(object interface{}, deleteOptions *DeleteOptions) error {
+func (d *deleter) deleteAll(object any, deleteOptions *DeleteOptions) error {
 	var (
 		value   = reflect.ValueOf(object)
 		graphs  []graph
 		err     error
-		records []neo4j.Record
+		records []*neo4j.Record
 	)
 
 	if graphs, err = d.graphFactory.get(value, map[int]bool{labels: true}); err != nil {
@@ -140,11 +142,11 @@ func (d *deleter) deleteAll(object interface{}, deleteOptions *DeleteOptions) er
 	cypher, parameter := cypherBuilder.getDeleteAll()
 
 	if cypher != emptyString {
-		if records, err = neo4j.Collect(d.cypherExecuter.exec(cypher, parameter)); err != nil {
+		if records, err = d.cypherExecuter.exec(cypher, parameter); err != nil {
 			return err
 		}
 		for _, record := range records {
-			graphs[0].setID(record.GetByIndex(0).(int64))
+			graphs[0].setID(record.Values[0].(int64))
 			deletedGraphs, updatedGraphs := d.store.delete(graphs[0])
 			for _, updatedGraph := range updatedGraphs {
 				notifyPostDelete(d.eventer, updatedGraph, UPDATE)

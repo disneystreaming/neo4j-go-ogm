@@ -23,7 +23,7 @@
 package gogm
 
 import (
-	"errors"
+	"fmt"
 	"reflect"
 )
 
@@ -52,10 +52,10 @@ func (rm *relationshipMetadata) loadRelatedGraphs(g graph, ID func(graph), regis
 	endValue := value.FieldByName(rm.endpoints[endNode].Name)
 
 	if startValue.IsNil() {
-		return nil, errors.New("start node for relationship is nil. Expected a non-nil start node")
+		return nil, fmt.Errorf("start node for %v is nil. Expected a non-nil start node. obj dump: %v", rm.name, *rm)
 	}
 	if endValue.IsNil() {
-		return nil, errors.New("end node for relationship is nil. Expected a non-nil end node")
+		return nil, fmt.Errorf("end node for %v is nil. Expected a non-nil end node. obj dump: %v", rm.name, *rm)
 	}
 	v1 := startValue.Elem().Addr()
 	v2 := endValue.Elem().Addr()

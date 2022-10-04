@@ -25,8 +25,8 @@ package models
 import (
 	"time"
 
-	gogm "github.com/codingfinest/neo4j-go-ogm"
-	"github.com/neo4j/neo4j-go-driver/neo4j"
+	gogm "github.com/disneystreaming/neo4j-go-ogm"
+	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )
 
 type TestNodeEntity struct {
@@ -47,7 +47,7 @@ type Node0 struct {
 	MapProps         map[string]int
 	AliasedMapProps1 map[string]*string `gogm:"name:aliasedMapProp"`
 	InvalidIDMapProp map[int]int
-	MapToInterfaces  map[string]interface{}
+	MapToInterfaces  map[string]any
 	N1               *Node1
 }
 type Node1 struct {

@@ -35,7 +35,7 @@ type node struct {
 	depth         *int
 	label         string
 	signature     string
-	properties    map[string]interface{}
+	properties    map[string]any
 	relationships map[int64]graph
 }
 
@@ -72,11 +72,11 @@ func (n *node) setLabel(label string) {
 	n.label = label
 }
 
-func (n *node) getProperties() map[string]interface{} {
+func (n *node) getProperties() map[string]any {
 	return n.properties
 }
 
-func (n *node) setProperties(p map[string]interface{}) {
+func (n *node) setProperties(p map[string]any) {
 	n.properties = p
 }
 

@@ -31,7 +31,7 @@ import (
 
 type metadata interface {
 	getLabel(reflect.Value) (string, error)
-	getProperties(reflect.Value) map[string]interface{}
+	getProperties(reflect.Value) map[string]any
 	getCustomID(reflect.Value) (string, reflect.Value)
 	loadRelatedGraphs(g graph, ID func(graph), registry *registry) (map[int64]graph, error)
 	getGraphField(ref graph, relatedGraph graph) (*field, error)
@@ -68,13 +68,13 @@ func (c *commonMetadata) getPropertyStructFields() map[string]*reflect.StructFie
 	return c.propertyStructFields
 }
 
-func (c *commonMetadata) getProperties(v reflect.Value) map[string]interface{} {
+func (c *commonMetadata) getProperties(v reflect.Value) map[string]any {
 
 	if v.IsZero() {
 		return nil
 	}
 
-	properties := map[string]interface{}{}
+	properties := map[string]any{}
 	for backendName, structField := range c.propertyStructFields {
 		if structField.Type.Kind() == reflect.Map {
 			for mappedKey, value := range getMapProperties(backendName, structField, v) {
@@ -124,7 +124,7 @@ func getMetadata(t reflect.Type, registry *registry) (metadata, error) {
 		r.customIDBackendName = customIDBackendName
 		r._type = typeOfObject
 
-		endpointFields, _ := getFeilds(valueOfObject.Elem(), isRelationshipEndPointFieldFilter(startNodeTag), isRelationshipEndPointFieldFilter(endNodeTag))
+		endpointFields, _ := getFields(valueOfObject.Elem(), isRelationshipEndPointFieldFilter(startNodeTag), isRelationshipEndPointFieldFilter(endNodeTag))
 
 		if len(endpointFields[startNode]) != 1 {
 			return nil, errors.New("Expected 1 field to be tagged 'startNode' in type " + typeOfObject.String())
@@ -161,7 +161,7 @@ func getMetadata(t reflect.Type, registry *registry) (metadata, error) {
 		n.propertyStructFields = propertyStructFields
 		n.runtimeLabelsStructField = getRuntimeLabelsStructFeild(propertyStructFields)
 
-		relationships, _ := getFeilds(valueOfObject.Elem(), isRelationshipFieldFilter(typeOfPrivateNode), isRelationshipFieldFilter(typeOfPrivateRelationship))
+		relationships, _ := getFields(valueOfObject.Elem(), isRelationshipFieldFilter(typeOfPrivateNode), isRelationshipFieldFilter(typeOfPrivateRelationship))
 
 		for _, relationshipFieldA := range relationships[0] {
 

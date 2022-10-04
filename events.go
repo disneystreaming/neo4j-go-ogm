@@ -42,7 +42,7 @@ const (
 
 //Event is fired on an object during one of the following life cycle CREATE, LOAD, UPDATE or DELETE
 type Event interface {
-	GetObject() interface{}
+	GetObject() any
 	GetLifeCycle() lifeCycle
 }
 
@@ -51,7 +51,7 @@ type event struct {
 	lifeCycle lifeCycle
 }
 
-func (e event) GetObject() interface{} {
+func (e event) GetObject() any {
 	return e.object.Interface()
 }
 

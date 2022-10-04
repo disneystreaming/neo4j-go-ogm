@@ -45,8 +45,8 @@ func unloadGraphProperties(g graph, propertyStructFields map[string]*reflect.Str
 	}
 }
 
-func diffProperties(proposedProperties map[string]interface{}, storedProperties map[string]interface{}) map[string]interface{} {
-	var properties = map[string]interface{}{}
+func diffProperties(proposedProperties map[string]any, storedProperties map[string]any) map[string]any {
+	var properties = map[string]any{}
 	for name, property := range proposedProperties {
 		if !reflect.DeepEqual(storedProperties[name], property) {
 			properties[name] = proposedProperties[name]
@@ -63,7 +63,7 @@ func getPropertyStructField(t reflect.Type) (map[string]*reflect.StructField, er
 		err                  error
 	)
 
-	fields, _ = getFeilds(reflect.New(t).Elem(), propertyFilter)
+	fields, _ = getFields(reflect.New(t).Elem(), propertyFilter)
 
 	for _, field := range fields[0] {
 		if field.getStructField().Type.Kind() == reflect.Struct && field.getStructField().Anonymous {
@@ -101,23 +101,27 @@ func getBackendPropertyName(field *field) string {
 	return propertyName
 }
 
-func driverPropertiesAsStructFieldValues(driverProperties map[string]interface{}, structFields map[string]*reflect.StructField) {
-	mappedProperties := map[string]map[string]interface{}{}
+func driverPropertiesAsStructFieldValues(driverProperties map[string]any, structFields map[string]*reflect.StructField) {
+	mappedProperties := map[string]map[string]any{}
 	for key, property := range driverProperties {
 		if strings.Contains(key, mapPropDelim) {
 			mappedPropName := strings.Split(key, mapPropDelim)
 			if structFields[mappedPropName[0]] != nil {
 				if mappedProperties[mappedPropName[0]] == nil {
-					mappedProperties[mappedPropName[0]] = map[string]interface{}{}
+					mappedProperties[mappedPropName[0]] = map[string]any{}
 				}
 				mappedProperties[mappedPropName[0]][mappedPropName[1]] = property
 				continue
 			}
 			continue
 		}
-
+		//Check both regular and toLower
 		if structFields[key] != nil {
 			driverProperties[key] = driverValueAsType(property, structFields[key].Type)
+		} else if structFields[strings.ToLower(key)] != nil {
+			//If it's a toLower match, include both variants of the key
+			driverProperties[key] = driverValueAsType(property, structFields[strings.ToLower(key)].Type)
+			driverProperties[strings.ToLower(key)] = driverValueAsType(property, structFields[strings.ToLower(key)].Type)
 		}
 	}
 
@@ -134,8 +138,8 @@ func driverPropertiesAsStructFieldValues(driverProperties map[string]interface{}
 
 }
 
-func getMapProperties(backendName string, structField *reflect.StructField, v reflect.Value) map[string]interface{} {
-	mappedProperties := map[string]interface{}{}
+func getMapProperties(backendName string, structField *reflect.StructField, v reflect.Value) map[string]any {
+	mappedProperties := map[string]any{}
 	if mapValue := v.Elem().FieldByName(structField.Name); !mapValue.IsNil() {
 		iter := mapValue.MapRange()
 		for iter.Next() {

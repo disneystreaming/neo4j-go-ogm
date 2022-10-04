@@ -1,13 +1,15 @@
 package gogm
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 )
 
 type nodeQueryBuilder struct {
 	n                              *node
 	registry                       *registry
-	deltaProperties                map[string]interface{}
+	deltaProperties                map[string]any
 	isLabelsDirty                  bool
 	removedRelationships           map[int64]graph
 	removedRelationshipsOtherNodes map[int64]graph
@@ -99,19 +101,19 @@ func (nqb nodeQueryBuilder) isGraphDirty() bool {
 	return nqb.n.getID() < 0 || len(nqb.deltaProperties) > 0 || len(nqb.removedRelationships) > 0 || nqb.isLabelsDirty
 }
 
-func (nqb nodeQueryBuilder) getCreate() (string, string, map[string]interface{}, map[string]graph) {
+func (nqb nodeQueryBuilder) getCreate() (string, string, map[string]any, map[string]graph) {
 	create := `CREATE (` + nqb.n.getSignature() + `)
 	`
 	return create, emptyString, nil, nil
 }
 
-func (nqb nodeQueryBuilder) getMatch() (string, map[string]interface{}, map[string]graph) {
+func (nqb nodeQueryBuilder) getMatch() (string, map[string]any, map[string]graph) {
 	var (
 		nSign                                       = nqb.n.getSignature()
 		metadata, _                                 = nqb.registry.get(nqb.n.getValue().Type())
 		customIDPropertyName, customIDPropertyValue = metadata.getCustomID(*nqb.n.getValue())
 		idCQLRef                                    = nSign + "ID"
-		parameters                                  = map[string]interface{}{idCQLRef: nqb.n.getID()}
+		parameters                                  = map[string]any{idCQLRef: nqb.n.getID()}
 	)
 	match := `MATCH (` + nSign + `)
 	`
@@ -125,13 +127,13 @@ func (nqb nodeQueryBuilder) getMatch() (string, map[string]interface{}, map[stri
 
 	return match + filter, parameters, nil
 }
-func (nqb nodeQueryBuilder) getSet() (string, map[string]interface{}) {
+func (nqb nodeQueryBuilder) getSet() (string, map[string]any) {
 
 	var (
 		set        string
 		nSign      = nqb.n.getSignature()
-		properties = map[string]interface{}{}
-		parameters = map[string]interface{}{}
+		properties = map[string]any{}
+		parameters = map[string]any{}
 		propCQLRef = nSign + "Properties"
 	)
 	for propertyName, propertyValue := range nqb.deltaProperties {
@@ -154,20 +156,20 @@ func (nqb nodeQueryBuilder) getSet() (string, map[string]interface{}) {
 	return set, parameters
 }
 
-func (nqb nodeQueryBuilder) getLoadAll(IDs interface{}, lo *LoadOptions) (string, map[string]interface{}) {
+func (nqb nodeQueryBuilder) getLoadAll(IDs any, lo *LoadOptions) (string, map[string]any) {
 
 	var (
 		depth                   = strconv.Itoa(lo.Depth)
 		metadata, _             = nqb.registry.get(nqb.n.getValue().Type())
 		customIDPropertyName, _ = metadata.getCustomID(*nqb.n.getValue())
-		parameters              = map[string]interface{}{}
+		parameters              = map[string]any{}
 	)
 	if lo.Depth == infiniteDepth {
 		depth = emptyString
 	}
-
-	match := `MATCH path = (n:` + nqb.n.getLabel() + `)-[*0..` + depth + `]-()
-	`
+	matchOutString := fmt.Sprintf(`MATCH path = (n:%s)-[*0..%s]->()`, nqb.n.getLabel(), depth)
+	matchInString := fmt.Sprintf(`MATCH path = (n:%s)<-[*0..%s]-()`, nqb.n.getLabel(), depth)
+	unionString := `UNION`
 	var filter string
 	if IDs != nil {
 		filter = `WHERE ID(n) IN $ids 
@@ -183,21 +185,21 @@ func (nqb nodeQueryBuilder) getLoadAll(IDs interface{}, lo *LoadOptions) (string
 	WITH  n, path, index, [i in index | CASE WHEN nodes(path)[i] = startNode(relationships(path)[i]) THEN false ELSE true END] as isDirectionInverted
 	RETURN path, ID(n), isDirectionInverted
 	`
-
-	return match + filter + end, parameters
+	match := fmt.Sprintf("%s", strings.Join([]string{matchOutString, filter, end, unionString, matchInString, filter, end}, " "))
+	return match, parameters
 }
 
-func (nqb nodeQueryBuilder) getDelete() (string, map[string]interface{}, map[string]graph) {
+func (nqb nodeQueryBuilder) getDelete() (string, map[string]any, map[string]graph) {
 	match, parameters, _ := nqb.getMatch()
 	delete := `DETACH DELETE ` + nqb.n.getSignature() + ` RETURN ID(` + nqb.n.getSignature() + `)
 	`
 	return match + delete, parameters, nil
 }
 
-func (nqb nodeQueryBuilder) getDeleteAll() (string, map[string]interface{}) {
+func (nqb nodeQueryBuilder) getDeleteAll() (string, map[string]any) {
 	return `MATCH (n:` + nqb.n.getLabel() + `) DETACH DELETE n RETURN ID(n)`, nil
 }
 
-func (nqb nodeQueryBuilder) getCountEntitiesOfType() (string, map[string]interface{}) {
+func (nqb nodeQueryBuilder) getCountEntitiesOfType() (string, map[string]any) {
 	return `MATCH (n:` + nqb.n.getLabel() + `) RETURN count(n) as count`, nil
 }

@@ -35,7 +35,7 @@ type relationship struct {
 
 	ID         int64
 	relType    string
-	properties map[string]interface{}
+	properties map[string]any
 
 	signature string
 
@@ -106,11 +106,11 @@ func (r *relationship) getType() string {
 	return r.relType
 }
 
-func (r *relationship) getProperties() map[string]interface{} {
+func (r *relationship) getProperties() map[string]any {
 	return r.properties
 }
 
-func (r *relationship) setProperties(p map[string]interface{}) {
+func (r *relationship) setProperties(p map[string]any) {
 	r.properties = p
 }
 

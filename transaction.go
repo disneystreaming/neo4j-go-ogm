@@ -23,49 +23,43 @@
 package gogm
 
 import (
-	"github.com/neo4j/neo4j-go-driver/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )
 
-type transaction struct {
+type Transaction struct {
 	neo4jTransaction neo4j.Transaction
 	session          neo4j.Session
 	close            transactionEnder
 }
 
-func newTransaction(driver neo4j.Driver, transactionEnder transactionEnder, accessMode neo4j.AccessMode) (*transaction, error) {
+func newTransaction(driver neo4j.Driver, transactionEnder transactionEnder, accessMode neo4j.AccessMode) (*Transaction, error) {
 
-	var (
-		err     error
-		session neo4j.Session
-	)
+	session := driver.NewSession(neo4j.SessionConfig{
+		AccessMode: accessMode,
+	})
 
-	if session, err = driver.Session(accessMode); err != nil {
+	if neo4jtransaction, err := session.BeginTransaction(); err != nil {
 		return nil, err
+	} else {
+		return &Transaction{
+			neo4jTransaction: neo4jtransaction,
+			session:          session,
+			close:            transactionEnder}, nil
 	}
-
-	var neo4jtransaction neo4j.Transaction
-	if neo4jtransaction, err = session.BeginTransaction(); err != nil {
-		return nil, err
-	}
-
-	return &transaction{
-		neo4jTransaction: neo4jtransaction,
-		session:          session,
-		close:            transactionEnder}, nil
 }
 
-func (t *transaction) run(cql string, params map[string]interface{}) (neo4j.Result, error) {
+func (t *Transaction) run(cql string, params map[string]any) (neo4j.Result, error) {
 	return t.neo4jTransaction.Run(cql, params)
 }
 
-func (t *transaction) Commit() error {
+func (t *Transaction) Commit() error {
 	return t.neo4jTransaction.Commit()
 }
 
-func (t *transaction) RollBack() error {
+func (t *Transaction) RollBack() error {
 	return t.neo4jTransaction.Rollback()
 }
 
-func (t *transaction) Close() error {
+func (t *Transaction) Close() error {
 	return t.close()
 }

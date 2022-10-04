@@ -28,13 +28,13 @@ import (
 )
 
 type graphQueryBuilder interface {
-	getCreate() (string, string, map[string]interface{}, map[string]graph)
-	getMatch() (string, map[string]interface{}, map[string]graph)
-	getSet() (string, map[string]interface{})
-	getDelete() (string, map[string]interface{}, map[string]graph)
-	getLoadAll(IDs interface{}, lo *LoadOptions) (string, map[string]interface{})
-	getDeleteAll() (string, map[string]interface{})
-	getCountEntitiesOfType() (string, map[string]interface{})
+	getCreate() (string, string, map[string]any, map[string]graph)
+	getMatch() (string, map[string]any, map[string]graph)
+	getSet() (string, map[string]any)
+	getDelete() (string, map[string]any, map[string]graph)
+	getLoadAll(IDs any, lo *LoadOptions) (string, map[string]any)
+	getDeleteAll() (string, map[string]any)
+	getCountEntitiesOfType() (string, map[string]any)
 
 	getGraph() graph
 	isGraphDirty() bool

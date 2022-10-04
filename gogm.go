@@ -26,7 +26,7 @@ import (
 	"math"
 	"reflect"
 
-	"github.com/neo4j/neo4j-go-driver/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )
 
 const (
@@ -84,10 +84,10 @@ type LogLevel int
 
 const (
 	NONE    LogLevel = 0
-	ERROR            = 1
-	WARNING          = 2
-	INFO             = 3
-	DEBUG            = 4
+	ERROR   LogLevel = 1
+	WARNING LogLevel = 2
+	INFO    LogLevel = 3
+	DEBUG   LogLevel = 4
 )
 
 var logLevels = map[LogLevel]neo4j.LogLevel{
@@ -100,18 +100,18 @@ var logLevels = map[LogLevel]neo4j.LogLevel{
 //Gogm is an instance of the OGM
 type Gogm struct {
 	config *Config
-	driver neo4j.Driver
+	driver *neo4j.Driver
 }
 
 //New creates a new instance of the OGM
-func New(config *Config) *Gogm {
+func New(config *Config, driver *neo4j.Driver) *Gogm {
 	return &Gogm{
 		config,
-		nil}
+		driver}
 }
 
 //NewSession creates a new session on an OGM instance
-func (g *Gogm) NewSession(isWriteMode bool) (Session, error) {
+func (g *Gogm) NewSession(isWriteMode bool, entityInterfaceToConcreteMapper func(any) Member) (*SessionImpl, error) {
 
 	var err error
 	var accessMode neo4j.AccessMode = neo4j.AccessModeRead
@@ -119,24 +119,22 @@ func (g *Gogm) NewSession(isWriteMode bool) (Session, error) {
 		accessMode = neo4j.AccessModeWrite
 	}
 
-	if g.driver == nil {
-		if g.driver, err = getDriver(g.config.URI, g.config.Username, g.config.Password, g.config.LogLevel); err != nil {
-			return nil, err
-		}
+	if g.driver, err = getDriver(g.config.URI, g.config.Username, g.config.Password, g.config.LogLevel); err != nil {
+		return nil, err
 	}
 
-	cypherExecutor := newCypherExecuter(g.driver, accessMode, nil)
+	cypherExecutor := newCypherExecuter(*g.driver, accessMode, nil)
 	registry := newRegistry(*cypherExecutor)
 	graphFactory := newGraphFactory(registry)
 	transactioner := newTransactioner(accessMode)
 	eventer := newEventer()
 	store := newstore(registry)
 	saver := newSaver(cypherExecutor, store, *eventer, registry, *graphFactory)
-	loader := newLoader(cypherExecutor, store, *eventer, registry, *graphFactory, g.config.AllowCyclicRef)
+	loader := newLoader(cypherExecutor, store, *eventer, registry, *graphFactory, entityInterfaceToConcreteMapper, g.config.AllowCyclicRef)
 	deleter := newDeleter(cypherExecutor, store, *eventer, registry, *graphFactory)
 	queryer := newQueryer(cypherExecutor, *graphFactory, registry)
 
-	return &sessionImpl{
+	return &SessionImpl{
 		cypherExecutor,
 		saver,
 		loader,
@@ -145,11 +143,11 @@ func (g *Gogm) NewSession(isWriteMode bool) (Session, error) {
 		transactioner,
 		store,
 		registry,
-		g.driver,
+		*g.driver,
 		eventer}, nil
 }
 
-func getDriver(uri string, username string, password string, logLevel LogLevel) (neo4j.Driver, error) {
+func getDriver(uri string, username string, password string, logLevel LogLevel) (*neo4j.Driver, error) {
 	var (
 		err    error
 		driver neo4j.Driver
@@ -163,5 +161,5 @@ func getDriver(uri string, username string, password string, logLevel LogLevel) 
 		return nil, err
 	}
 
-	return driver, err
+	return &driver, err
 }

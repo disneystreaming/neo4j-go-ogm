@@ -24,21 +24,21 @@ package gogm
 
 //Session provides access to the database
 type Session interface {
-	Load(object interface{}, ID interface{}, loadOptions *LoadOptions) error
-	LoadAll(objects interface{}, IDs interface{}, loadOptions *LoadOptions) error
-	Reload(objects ...interface{}) error
-	Save(objects interface{}, saveOptions *SaveOptions) error
-	Delete(object interface{}) error
-	DeleteAll(object interface{}, deleteOptions *DeleteOptions) error
+	Load(object any, ID any, loadOptions *LoadOptions) error
+	LoadAll(objects any, IDs any, loadOptions *LoadOptions) error
+	Reload(objects ...any) error
+	Save(objects any, saveOptions *SaveOptions) error
+	Delete(object any) error
+	DeleteAll(object any, deleteOptions *DeleteOptions) error
 	PurgeDatabase() error
 	Clear() error
-	BeginTransaction() (*transaction, error)
-	GetTransaction() *transaction
-	QueryForObject(object interface{}, cypher string, parameters map[string]interface{}) error
-	QueryForObjects(objects interface{}, cypher string, parameters map[string]interface{}) error
-	Query(cypher string, parameters map[string]interface{}, objects ...interface{}) ([]map[string]interface{}, error)
-	CountEntitiesOfType(object interface{}) (int64, error)
-	Count(cypher string, parameters map[string]interface{}) (int64, error)
+	BeginTransaction() (*Transaction, error)
+	GetTransaction() *Transaction
+	QueryForObject(object any, cypher string, parameters map[string]any) error
+	QueryForObjects(objects any, cypher string, parameters map[string]any) error
+	Query(cypher string, parameters map[string]any, objects ...any) ([]map[string]any, error)
+	CountEntitiesOfType(object any) (int64, error)
+	Count(cypher string, parameters map[string]any) (int64, error)
 	RegisterEventListener(EventListener) error
 	DisposeEventListener(EventListener) error
 }

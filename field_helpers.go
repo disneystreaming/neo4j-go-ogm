@@ -28,7 +28,7 @@ import (
 
 type fieldFilter func(*field) bool
 
-func getFeilds(v reflect.Value, fieldFilters ...fieldFilter) ([][]*field, error) {
+func getFields(v reflect.Value, fieldFilters ...fieldFilter) ([][]*field, error) {
 
 	var fields = make([][]*field, len(fieldFilters))
 	vType := v.Type()
@@ -67,10 +67,23 @@ func getEntitiesFromField(f *field) []reflect.Value {
 func addDomainObject(f *field, value reflect.Value) {
 	kind := f.getStructField().Type.Kind()
 	if kind == reflect.Slice {
-		f.getValue().Set(reflect.Append(f.getValue(), value))
+		fType := f.getStructField().Type
+		vType := reflect.SliceOf(value.Type())
+
+		if fType == vType {
+			f.getValue().Set(reflect.Append(f.getValue(), value))
+		}
 	} else {
-		f.getValue().Set(value)
+		fType := f.getStructField().Type
+		vType := value.Type()
+		if vType == fType {
+			f.getValue().Set(value)
+		}
 	}
+}
+
+func convertMember[MemberType Member](loader *loader, object Member) MemberType {
+	return loader.entityInterfaceToConcreteMapper(object).(MemberType)
 }
 
 //Filter

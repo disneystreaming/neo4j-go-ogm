@@ -23,10 +23,10 @@
 package gogm
 
 import (
-	"github.com/neo4j/neo4j-go-driver/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )
 
-type sessionImpl struct {
+type SessionImpl struct {
 	cypherExecuter *cypherExecuter
 	saver          *saver
 	loader         *loader
@@ -39,32 +39,46 @@ type sessionImpl struct {
 	eventer        *eventer
 }
 
-func (s *sessionImpl) Load(object interface{}, ID interface{}, loadOptions *LoadOptions) error {
+func LoadGeneric[MemberType Member](session *SessionImpl, object *MemberType, ID any, loadOptions *LoadOptions) error {
+	return session.Load(object, ID, loadOptions)
+}
+
+func LoadAllGeneric[MemberType Member](session *SessionImpl, object *[]MemberType, ID any, loadOptions *LoadOptions) error {
+	return session.LoadAll(object, ID, loadOptions)
+}
+
+func SaveGeneric[MemberType Member](session *SessionImpl, object *MemberType, saveOptions *SaveOptions) error {
+	return session.Save(object, saveOptions)
+}
+
+func (s *SessionImpl) Load(object any, ID any, loadOptions *LoadOptions) error {
+
 	_, err := s.loader.load(object, ID, loadOptions, false)
 	return err
 }
 
-func (s *sessionImpl) LoadAll(objects interface{}, IDs interface{}, loadOptions *LoadOptions) error {
+func (s *SessionImpl) LoadAll(objects any, IDs any, loadOptions *LoadOptions) error {
 	return s.loader.loadAll(objects, IDs, loadOptions)
 }
 
-func (s *sessionImpl) Reload(objects ...interface{}) error {
+//TODO: Need to rework these functions back into instances and create generics for them
+func (s *SessionImpl) Reload(objects ...any) error {
 	return s.loader.reload(objects...)
 }
 
-func (s *sessionImpl) Save(objects interface{}, saveOptions *SaveOptions) error {
+func (s *SessionImpl) Save(objects any, saveOptions *SaveOptions) error {
 	return s.saver.save(objects, saveOptions)
 }
 
-func (s *sessionImpl) Delete(object interface{}) error {
+func (s *SessionImpl) Delete(object any) error {
 	return s.deleter.delete(object)
 }
 
-func (s *sessionImpl) DeleteAll(objects interface{}, deleteOptions *DeleteOptions) error {
+func (s *SessionImpl) DeleteAll(objects any, deleteOptions *DeleteOptions) error {
 	return s.deleter.deleteAll(objects, deleteOptions)
 }
 
-func (s *sessionImpl) PurgeDatabase() error {
+func (s *SessionImpl) PurgeDatabase() error {
 	var err error
 	if err = s.deleter.purgeDatabase(); err != nil {
 		return err
@@ -72,15 +86,15 @@ func (s *sessionImpl) PurgeDatabase() error {
 	return s.store.clear()
 }
 
-func (s *sessionImpl) Clear() error {
+func (s *SessionImpl) Clear() error {
 	return s.store.clear()
 }
 
-func (s *sessionImpl) BeginTransaction() (*transaction, error) {
+func (s *SessionImpl) BeginTransaction() (*Transaction, error) {
 	return s.transactioner.beginTransaction(s)
 }
 
-func (s *sessionImpl) GetTransaction() *transaction {
+func (s *SessionImpl) GetTransaction() *Transaction {
 	return s.transactioner.transaction
 }
 
@@ -92,7 +106,7 @@ func (s *sessionImpl) GetTransaction() *transaction {
 //
 //Post condition:
 //Polulated domain objects
-func (s *sessionImpl) QueryForObject(object interface{}, cypher string, parameters map[string]interface{}) error {
+func (s *SessionImpl) QueryForObject(object any, cypher string, parameters map[string]any) error {
 	return s.queryer.queryForObject(object, cypher, parameters)
 }
 
@@ -104,25 +118,25 @@ func (s *sessionImpl) QueryForObject(object interface{}, cypher string, paramete
 //
 //Post condition:
 //Polulated domain objects
-func (s *sessionImpl) QueryForObjects(objects interface{}, cypher string, parameters map[string]interface{}) error {
+func (s *SessionImpl) QueryForObjects(objects any, cypher string, parameters map[string]any) error {
 	return s.queryer.queryForObjects(objects, cypher, parameters)
 }
 
-func (s *sessionImpl) Query(cypher string, parameters map[string]interface{}, objects ...interface{}) ([]map[string]interface{}, error) {
+func (s *SessionImpl) Query(cypher string, parameters map[string]any, objects ...any) ([]map[string]any, error) {
 	return s.queryer.query(cypher, parameters, objects...)
 }
 
-func (s *sessionImpl) CountEntitiesOfType(object interface{}) (int64, error) {
+func (s *SessionImpl) CountEntitiesOfType(object any) (int64, error) {
 	return s.queryer.countEntitiesOfType(object)
 }
 
-func (s *sessionImpl) Count(cypher string, parameters map[string]interface{}) (int64, error) {
+func (s *SessionImpl) Count(cypher string, parameters map[string]any) (int64, error) {
 	return s.queryer.count(cypher, parameters)
 }
 
-func (s *sessionImpl) RegisterEventListener(eventListener EventListener) error {
+func (s *SessionImpl) RegisterEventListener(eventListener EventListener) error {
 	return s.eventer.registerEventListener(eventListener)
 }
-func (s *sessionImpl) DisposeEventListener(eventListener EventListener) error {
+func (s *SessionImpl) DisposeEventListener(eventListener EventListener) error {
 	return s.eventer.disposeEventListener(eventListener)
 }

@@ -27,7 +27,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/neo4j/neo4j-go-driver/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )
 
 type saver struct {
@@ -42,10 +42,10 @@ func newSaver(cypherExecuter *cypherExecuter, store store, eventer eventer, regi
 	return &saver{cypherExecuter, store, eventer, registry, graphFactory}
 }
 
-func (s *saver) save(object interface{}, saveOptions *SaveOptions) error {
+func (s *saver) save(object any, saveOptions *SaveOptions) error {
 	var (
 		graphs        []graph
-		record        neo4j.Record
+		record        *neo4j.Record
 		savedGraphs   map[string]graph
 		deletedGraphs map[string]graph
 		err           error
@@ -59,7 +59,7 @@ func (s *saver) save(object interface{}, saveOptions *SaveOptions) error {
 	}
 
 	if saveOptions.Depth > maxDepth {
-		return errors.New("Cannot save greater than max depth")
+		return errors.New("cannot save greater than max depth")
 	}
 
 	if graphs, err = s.graphFactory.get(reflect.ValueOf(object), nil); err != nil {
@@ -70,10 +70,10 @@ func (s *saver) save(object interface{}, saveOptions *SaveOptions) error {
 		return err
 	}
 
+	createdGraphSignatures := map[string]bool{}
 	if record != nil {
-		createdGraphSignatures := map[string]bool{}
-		for index, key := range record.Keys() {
-			properties := record.GetByIndex(index).(map[string]interface{})
+		for index, key := range record.Keys {
+			properties := record.Values[index].(map[string]any)
 
 			//New graphs have negative IDs. Update the local graphs with database generated IDs
 			if savedGraphs[key] != nil && savedGraphs[key].getID() < 0 {
@@ -92,54 +92,56 @@ func (s *saver) save(object interface{}, saveOptions *SaveOptions) error {
 				notifyPostDelete(s.eventer, deletedGraphs[key], DELETE)
 			}
 		}
+	}
 
-		for _, g := range savedGraphs {
-			for internalID, relatedGraph := range g.getRelatedGraphs() {
-				if internalID < 0 {
-					//Related graph map is still referencing the tempoary ID. Update with database generated IDs
-					delete(g.getRelatedGraphs(), internalID)
-					if relatedGraph.getID() > initialGraphID {
-						g.setRelatedGraph(relatedGraph)
-					}
+	for _, g := range savedGraphs {
+		for internalID, relatedGraph := range g.getRelatedGraphs() {
+			if internalID < 0 {
+				//Related graph map is still referencing the tempoary ID. Update with database generated IDs
+				delete(g.getRelatedGraphs(), internalID)
+				if relatedGraph.getID() > initialGraphID {
+					g.setRelatedGraph(relatedGraph)
+				}
+			}
+		}
+		var savedDepth int = -1
+		if coord := g.getCoordinate(); coord != nil {
+			savedDepth = savedDepths[coord.graphIndex]
+		}
+		if savedDepth >= 0 {
+			if g.getCoordinate().depth == 0 {
+				g.setDepth(&savedDepth)
+			}
+			saveLifecycle := UPDATE
+			if createdGraphSignatures[g.getSignature()] {
+				saveLifecycle = CREATE
+			}
+			store.save(g)
+			if g.getValue().IsValid() {
+				for _, eventListener := range s.eventer.eventListeners {
+					eventListener.OnPostSave(event{g.getValue(), saveLifecycle})
 				}
 			}
 
-			savedDepth := savedDepths[g.getCoordinate().graphIndex]
-			if savedDepth >= 0 {
-				if g.getCoordinate().depth == 0 {
-					g.setDepth(&savedDepth)
-				}
-				saveLifecycle := UPDATE
-				if createdGraphSignatures[g.getSignature()] {
-					saveLifecycle = CREATE
-				}
-				store.save(g)
-				if g.getValue().IsValid() {
-					for _, eventListener := range s.eventer.eventListeners {
-						eventListener.OnPostSave(event{g.getValue(), saveLifecycle})
-					}
-				}
-
-			}
 		}
 	}
 
 	return err
 }
 
-func (s *saver) persist(graphs []graph, saveOptions *SaveOptions) ([]int, neo4j.Record, map[string]graph, map[string]graph, error) {
+func (s *saver) persist(graphs []graph, saveOptions *SaveOptions) ([]int, *neo4j.Record, map[string]graph, map[string]graph, error) {
 
 	var (
 		err    error
-		record neo4j.Record
-		params map[string]interface{}
+		record *neo4j.Record
+		params map[string]any
 
 		loadedGraphs = newstore(nil)
 
 		savedGraphs   map[string]graph
 		deletedGraphs map[string]graph
 
-		grandParams        = map[string]interface{}{}
+		grandParams        = map[string]any{}
 		grandSavedGraphs   = map[string]graph{}
 		grandDeletedGraphs = map[string]graph{}
 		saveClausesSlice   []clauses
@@ -204,24 +206,26 @@ func (s *saver) persist(graphs []graph, saveOptions *SaveOptions) ([]int, neo4j.
 	cypher += _return
 
 	if cypher != emptyString {
-		var records []neo4j.Record
-		if records, err = neo4j.Collect(s.cypherExecuter.exec(cypher, grandParams)); err != nil {
+		var records []*neo4j.Record
+		if records, err = s.cypherExecuter.exec(cypher, grandParams); err != nil {
 			return savedDepths, nil, nil, nil, err
 		}
-		record = records[0]
+		if len(records) > 0 {
+			record = records[0]
+		}
 	}
 
 	return savedDepths, record, grandSavedGraphs, grandDeletedGraphs, err
 }
 
-func (s *saver) getSaveMeta(g graph, saveOptions *SaveOptions, ensureID func(graph), loadedGraphs store) (int, map[clause][]string, map[string]graph, map[string]graph, map[string]interface{}, error) {
+func (s *saver) getSaveMeta(g graph, saveOptions *SaveOptions, ensureID func(graph), loadedGraphs store) (int, map[clause][]string, map[string]graph, map[string]graph, map[string]any, error) {
 	var (
 		err error
 
 		savedGraphs      = map[string]graph{}
 		deletedGraphs    = map[string]graph{}
 		gotten           = map[string]graphQueryBuilder{}
-		parameters       = []map[string]interface{}{}
+		parameters       = []map[string]any{}
 		graphSaveClauses = map[clause][]string{}
 
 		savedDepth  = -1
@@ -242,26 +246,42 @@ func (s *saver) getSaveMeta(g graph, saveOptions *SaveOptions, ensureID func(gra
 	loadedGraphs.save(g)
 
 	for len(queue) > 0 {
-
-		savedDepth = queue[0].getCoordinate().depth
-
-		if err = notifyPreSaveGraph(queue[0], s.eventer, s.registry); err != nil {
+		var (
+			currentHead       graph = queue[0]
+			savedDepth        int   = 0
+			currentCoordinate *coordinate
+		)
+		//TODO: Determine if we want to return, continue at 0, or fail
+		if currentHead != nil {
+			if currentCoordinate = currentHead.getCoordinate(); currentCoordinate != nil {
+				savedDepth = currentCoordinate.depth
+			} else {
+				currentHead = nil
+				queue = queue[1:]
+				continue
+			}
+		} else {
+			currentHead = nil
+			queue = queue[1:]
+			continue
+		}
+		if err = notifyPreSaveGraph(currentHead, s.eventer, s.registry); err != nil {
 			return savedDepth, nil, nil, nil, nil, err
 		}
 
-		if reflect.TypeOf(queue[0]) == typeOfPrivateRelationship || queue[0].getCoordinate().depth+1 < maxGraphDepth {
-			if err := loadRelatedGraphs(queue[0], ensureID, s.registry, loadedGraphs, s.store); err != nil {
+		if reflect.TypeOf(currentHead) == typeOfPrivateRelationship || currentCoordinate.depth+1 < maxGraphDepth {
+			if err := loadRelatedGraphs(currentHead, ensureID, s.registry, loadedGraphs, s.store); err != nil {
 				return savedDepth, nil, nil, nil, nil, err
 			}
 		}
 
 		var cBuilder graphQueryBuilder
-		if cBuilder, err = newCypherBuilder(queue[0], s.registry, s.store); err != nil {
+		if cBuilder, err = newCypherBuilder(currentHead, s.registry, s.store); err != nil {
 			return savedDepth, nil, nil, nil, nil, err
 		}
 		if cBuilder.isGraphDirty() {
 
-			if queue[0].getID() < 0 {
+			if currentHead.getID() < 0 {
 				nodeCreate, relationshipCreate, createParameters, createDeps := cBuilder.getCreate()
 				parameters = append(parameters, createParameters)
 				if nodeCreate != emptyString {
@@ -283,7 +303,7 @@ func (s *saver) getSaveMeta(g graph, saveOptions *SaveOptions, ensureID func(gra
 			parameters = append(parameters, setParameters)
 			graphSaveClauses[setClause] = append(graphSaveClauses[setClause], set)
 
-			if queue[0].getCoordinate().depth+1 < maxGraphDepth {
+			if currentCoordinate.depth+1 < maxGraphDepth {
 				removedRelationships, otherNodes := cBuilder.getRemovedGraphs()
 
 				for _, removedRelationship := range removedRelationships {
@@ -313,17 +333,17 @@ func (s *saver) getSaveMeta(g graph, saveOptions *SaveOptions, ensureID func(gra
 					savedGraphs[otherNode.getSignature()] = otherNode
 				}
 			}
-			savedGraphs[queue[0].getSignature()] = queue[0]
+			savedGraphs[currentHead.getSignature()] = currentHead
 		}
 
-		gotten[queue[0].getSignature()] = cBuilder
+		gotten[currentHead.getSignature()] = cBuilder
 
-		for _, relatedGraph := range queue[0].getRelatedGraphs() {
+		for _, relatedGraph := range currentHead.getRelatedGraphs() {
 			if gotten[relatedGraph.getSignature()] == nil && relatedGraph.getID() != initialGraphID {
 				queue = append(queue, relatedGraph)
 			}
 		}
-		queue[0] = nil
+		currentHead = nil
 		queue = queue[1:]
 	}
 
@@ -333,10 +353,13 @@ func (s *saver) getSaveMeta(g graph, saveOptions *SaveOptions, ensureID func(gra
 	for _, dep := range depedencies {
 		for ID := range dep {
 			if savedGraphs[ID] == nil {
-				match, matchParameters, _ := gotten[ID].getMatch()
-				parameters = append(parameters, matchParameters)
-				graphSaveClauses[matchClause] = append(graphSaveClauses[matchClause], match)
-				savedGraphs[ID] = gotten[ID].getGraph()
+				gotWithId := gotten[ID]
+				if gotWithId != nil {
+					match, matchParameters, _ := gotWithId.getMatch()
+					parameters = append(parameters, matchParameters)
+					graphSaveClauses[matchClause] = append(graphSaveClauses[matchClause], match)
+					savedGraphs[ID] = gotten[ID].getGraph()
+				}
 			}
 		}
 	}

@@ -55,8 +55,8 @@ type store interface {
 	// relationship returns the relationship graph with ID
 	relationship(int64) graph
 
-	// getByCustomID returns the graph with whose custom ID is interface{}
-	getByCustomID(reflect.Value, reflect.Type, interface{}) graph
+	// getByCustomID returns the graph with whose custom ID is any
+	getByCustomID(reflect.Value, reflect.Type, any) graph
 
 	// // print prints the store
 	// print()
@@ -68,12 +68,12 @@ type storeImpl struct {
 	nodes          map[int64]graph
 	relationships  map[int64]graph
 	relationshipsA map[int64]map[int64]*int64
-	customIDs      map[string]map[interface{}]*int64
+	customIDs      map[string]map[any]*int64
 	nodesMu        sync.Mutex
 }
 
 func newstore(registry *registry) *storeImpl {
-	return &storeImpl{registry, map[int64]graph{}, map[int64]graph{}, map[int64]map[int64]*int64{}, map[string]map[interface{}]*int64{}, sync.Mutex{}}
+	return &storeImpl{registry, map[int64]graph{}, map[int64]graph{}, map[int64]map[int64]*int64{}, map[string]map[any]*int64{}, sync.Mutex{}}
 }
 
 func (s *storeImpl) get(g graph) graph {
@@ -83,7 +83,6 @@ func (s *storeImpl) get(g graph) graph {
 		s.nodesMu.Lock()
 		defer s.nodesMu.Unlock()
 		storedGraph = s.nodes[g.getID()]
-		break
 	case typeOfPrivateRelationship:
 		internalID := g.getID()
 		if g.getValue() != nil && !g.getValue().IsValid() {
@@ -98,7 +97,6 @@ func (s *storeImpl) get(g graph) graph {
 			}
 		}
 		storedGraph = s.relationships[internalID]
-		break
 	}
 	return storedGraph
 }
@@ -109,7 +107,6 @@ func (s *storeImpl) save(g graph) {
 		s.nodesMu.Lock()
 		defer s.nodesMu.Unlock()
 		s.nodes[g.getID()] = g
-		break
 	case typeOfPrivateRelationship:
 		s.relationships[g.getID()] = g
 		if g.getValue() != nil && !g.getValue().IsValid() {
@@ -120,7 +117,6 @@ func (s *storeImpl) save(g graph) {
 			internalID := g.getID()
 			s.relationshipsA[relatedGraphs[startNode].getID()][relatedGraphs[endNode].getID()] = &internalID
 		}
-		break
 	}
 
 	if s.registry != nil && g.getValue() != nil && g.getValue().IsValid() {
@@ -130,7 +126,7 @@ func (s *storeImpl) save(g graph) {
 		if customIDName != emptyString {
 			internalID := g.getID()
 			if s.customIDs[vType.String()] == nil {
-				s.customIDs[vType.String()] = map[interface{}]*int64{}
+				s.customIDs[vType.String()] = map[any]*int64{}
 			}
 			s.customIDs[vType.String()][customIDValue.Interface()] = &internalID
 		}
@@ -163,7 +159,6 @@ func (s *storeImpl) delete(g graph) ([]graph, []graph) {
 			delete(s.nodes, node.getID())
 			deletedGraphs = append(deletedGraphs, node)
 		}
-		break
 	case typeOfPrivateRelationship:
 		relationship := s.relationships[g.getID()]
 		if relationship != nil {
@@ -178,7 +173,6 @@ func (s *storeImpl) delete(g graph) ([]graph, []graph) {
 			updatedGraphs = append(updatedGraphs, relationship.getRelatedGraphs()[startNode], relationship.getRelatedGraphs()[endNode])
 			deletedGraphs = append(deletedGraphs, relationship)
 		}
-		break
 	}
 
 	if s.registry != nil && g.getValue() != nil && g.getValue().IsValid() {
@@ -199,7 +193,7 @@ func (s *storeImpl) clear() error {
 	s.nodes = map[int64]graph{}
 	s.relationships = map[int64]graph{}
 	s.relationshipsA = map[int64]map[int64]*int64{}
-	s.customIDs = map[string]map[interface{}]*int64{}
+	s.customIDs = map[string]map[any]*int64{}
 	return nil
 }
 
@@ -231,7 +225,7 @@ func (s *storeImpl) all() []graph {
 	return allGraphs
 }
 
-func (s *storeImpl) getByCustomID(v reflect.Value, typeOfRefGraph reflect.Type, idValue interface{}) graph {
+func (s *storeImpl) getByCustomID(v reflect.Value, typeOfRefGraph reflect.Type, idValue any) graph {
 	typeName := v.Type().String()
 	mapToSearch := s.nodes
 	if typeOfRefGraph == typeOfPrivateRelationship {
@@ -250,18 +244,26 @@ func unwind(g graph, depth int) store {
 	g.setCoordinate(&coordinate{0, 0})
 	queue := []graph{g}
 	for len(queue) > 0 {
-		if reflect.TypeOf(queue[0]) == typeOfPrivateRelationship && queue[0].getCoordinate().depth > maxDepth {
+		firstInQueue := queue[0]
+		firstCoord := queue[0].getCoordinate()
+		//If either above are nil, skip
+		if firstInQueue == nil || firstCoord == nil {
+			continue
+		}
+		if reflect.TypeOf(firstInQueue) == typeOfPrivateRelationship && firstCoord.depth > maxDepth {
 			break
 		}
-		visited.save(queue[0])
-		for _, relatedGraph := range queue[0].getRelatedGraphs() {
+		visited.save(firstInQueue)
+		for _, relatedGraph := range firstInQueue.getRelatedGraphs() {
 			if visited.get(relatedGraph) == nil {
-				relatedGraph.setCoordinate(&coordinate{queue[0].getCoordinate().depth + 1, 0})
-				queue = append(queue, relatedGraph)
+				if coordFromFirst := firstInQueue.getCoordinate(); coordFromFirst != nil {
+					relatedGraph.setCoordinate(&coordinate{coordFromFirst.depth + 1, 0})
+					queue = append(queue, relatedGraph)
+				}
 			}
 		}
-		queue[0].setCoordinate(nil)
-		queue[0] = nil
+		firstInQueue.setCoordinate(nil)
+		firstInQueue = nil
 		queue = queue[1:]
 	}
 	return visited

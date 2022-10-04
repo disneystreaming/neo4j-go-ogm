@@ -58,8 +58,8 @@ func getInternalGraphType(container reflect.Type) reflect.Type {
 	return nil
 }
 
-func flattenParamters(parameters []map[string]interface{}) map[string]interface{} {
-	var flattenedParamters = map[string]interface{}{}
+func flattenParamters(parameters []map[string]any) map[string]any {
+	var flattenedParamters = map[string]any{}
 	for _, parameter := range parameters {
 		for key, value := range parameter {
 			flattenedParamters[key] = value
@@ -109,4 +109,8 @@ func elem(t reflect.Type) reflect.Type {
 		return t
 	}
 	return elem(t.Elem())
+}
+
+func GetDomainObjectType(t reflect.Type) reflect.Type {
+	return elem(t)
 }

@@ -24,27 +24,29 @@ package gogm
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
 
-	"github.com/neo4j/neo4j-go-driver/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )
 
 type loader struct {
-	cypherExecuter *cypherExecuter
-	store          store
-	eventer        eventer
-	registry       *registry
-	graphFactory   graphFactory
-	allowCyclicRef bool
+	cypherExecuter                  *cypherExecuter
+	store                           store
+	eventer                         eventer
+	registry                        *registry
+	graphFactory                    graphFactory
+	allowCyclicRef                  bool
+	entityInterfaceToConcreteMapper func(any) Member
 }
 
-func newLoader(cypherExecuter *cypherExecuter, store store, eventer eventer, registry *registry, graphFactory graphFactory, allowCyclicRef bool) *loader {
-	return &loader{cypherExecuter, store, eventer, registry, graphFactory, allowCyclicRef}
+func newLoader(cypherExecuter *cypherExecuter, store store, eventer eventer, registry *registry, graphFactory graphFactory, entityInterfaceToConcreteMapper func(any) Member, allowCyclicRef bool) *loader {
+	return &loader{cypherExecuter, store, eventer, registry, graphFactory, allowCyclicRef, entityInterfaceToConcreteMapper}
 }
 
-func (l *loader) load(object interface{}, ID interface{}, loadOptions *LoadOptions, reload bool) (store, error) {
+func (l *loader) load(object any, ID any, loadOptions *LoadOptions, reload bool) (store, error) {
 
 	var (
 		valueOfObject = reflect.ValueOf(object)
@@ -66,31 +68,40 @@ func (l *loader) load(object interface{}, ID interface{}, loadOptions *LoadOptio
 	if loadOptions == nil {
 		loadOptions = NewLoadOptions()
 	}
-	dummyValue := reflect.New(elem(reflect.TypeOf(object)).Elem())
-	graphs[0].setValue(&dummyValue)
-	sliceOfObjs, unloadedGraphs, err := l.loadAllOfGraphType(graphs[0], ptrToSliceIDs.Elem().Interface(), loadOptions, reload)
+	if len(graphs) > 0 {
+		otherDummy := reflect.New(elem(reflect.TypeOf(l.entityInterfaceToConcreteMapper(object))).Elem())
+		graphs[0].setValue(&otherDummy)
+		sliceOfObjs, unloadedGraphs, err := l.loadAllOfGraphType(graphs[0], ptrToSliceIDs.Elem().Interface(), loadOptions, reload)
 
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
+
+		if sliceOfObjs.Len() > 1 {
+			return nil, errors.New("Got too many objects for ID " + valueOfID.String())
+		} else {
+			hasOneResult := sliceOfObjs.Len() == 1
+			objSliceType := reflect.PointerTo(sliceOfObjs.Index(0).Elem().Type())
+			objType := valueOfObject.Elem().Type()
+			if hasOneResult && objSliceType == objType {
+				valueOfObject.Elem().Set(sliceOfObjs.Index(0).Elem().Addr())
+			} else {
+				fmt.Print("expected type of: ", objSliceType, " but got: ", objType)
+			}
+		}
+		return unloadedGraphs, err
+	} else {
+		return nil, errors.New("no graphs loaded, unable to set values")
 	}
-
-	if sliceOfObjs.Len() > 1 {
-		return nil, errors.New("Got too many objects for ID " + valueOfID.String())
-	} else if sliceOfObjs.Len() == 1 {
-		valueOfObject.Elem().Set(sliceOfObjs.Index(0).Elem().Addr())
-	}
-
-	return unloadedGraphs, err
 }
 
-func (l *loader) loadAll(objects interface{}, IDs interface{}, loadOptions *LoadOptions) error {
+func (l *loader) loadAll(objects any, IDs any, loadOptions *LoadOptions) error {
 
 	var (
 		graphs      []graph
 		sliceOfObjs reflect.Value
 		err         error
 	)
-
 	//objects: *[]*DomainObject
 	if graphs, err = l.graphFactory.get(reflect.ValueOf(objects), map[int]bool{labels: true, relatedGraph: true}); err != nil {
 		return err
@@ -99,11 +110,13 @@ func (l *loader) loadAll(objects interface{}, IDs interface{}, loadOptions *Load
 	if loadOptions == nil {
 		loadOptions = NewLoadOptions()
 	}
-
-	dummyValue := reflect.New(elem(reflect.TypeOf(objects)).Elem())
-	graphs[0].setValue(&dummyValue)
-	if sliceOfObjs, _, err = l.loadAllOfGraphType(graphs[0], IDs, loadOptions, false); err != nil {
-		return err
+	dataAsInt := reflect.New(elem(reflect.TypeOf(objects)).Elem()).Interface()
+	typedVal := reflect.ValueOf(l.entityInterfaceToConcreteMapper(dataAsInt))
+	if len(graphs) > 0 {
+		graphs[0].setValue(&typedVal)
+		if sliceOfObjs, _, err = l.loadAllOfGraphType(graphs[0], IDs, loadOptions, false); err != nil {
+			return err
+		}
 	}
 
 	valueOfSliceOfObjs := reflect.ValueOf(objects).Elem()
@@ -112,7 +125,7 @@ func (l *loader) loadAll(objects interface{}, IDs interface{}, loadOptions *Load
 	return nil
 }
 
-func (l *loader) reload(objects ...interface{}) error {
+func (l *loader) reload(objects ...any) error {
 	var err error
 	var graphs []graph
 	var IDer = getIDer(nil, nil)
@@ -143,7 +156,7 @@ func (l *loader) reload(objects ...interface{}) error {
 		}
 		storedUnwound := unwind(storedGraph, lo.Depth)
 		var unloadedGraphs store
-		if unloadedGraphs, err = l.load(valueOfObject.Interface(), ID, lo, true); err != nil {
+		if unloadedGraphs, err = l.load(object, ID, lo, true); err != nil {
 			return err
 		}
 
@@ -165,7 +178,7 @@ func (l *loader) reload(objects ...interface{}) error {
 	return nil
 }
 
-func (l *loader) loadAllOfGraphType(refGraph graph, IDs interface{}, loadOptions *LoadOptions, reload bool) (reflect.Value, store, error) {
+func (l *loader) loadAllOfGraphType(refGraph graph, IDs any, loadOptions *LoadOptions, reload bool) (reflect.Value, store, error) {
 
 	var (
 		typeOfRefGraph = reflect.TypeOf(refGraph)
@@ -190,7 +203,7 @@ func (l *loader) loadAllOfGraphType(refGraph graph, IDs interface{}, loadOptions
 
 	ptrToObjs.Elem().Set(sliceOfPtrToObjs)
 
-	var ids interface{}
+	var ids any
 	if IDs == nil {
 		ids = nil
 	} else {
@@ -235,8 +248,12 @@ func (l *loader) loadAllOfGraphType(refGraph graph, IDs interface{}, loadOptions
 		return invalidValue, nil, err
 	}
 
-	if records, err = neo4j.Collect(l.cypherExecuter.exec(cypherBuilder.getLoadAll(ids, loadOptions))); err != nil {
-		return invalidValue, nil, err
+	if r, e := l.cypherExecuter.exec(cypherBuilder.getLoadAll(ids, loadOptions)); e != nil {
+		return invalidValue, nil, e
+	} else {
+		for _, re := range r {
+			records = append(records, *re)
+		}
 	}
 
 	toUnLoad := newstore(nil)
@@ -247,14 +264,14 @@ func (l *loader) loadAllOfGraphType(refGraph graph, IDs interface{}, loadOptions
 	relatedValues[typeOfPrivateRelationship] = map[int64]map[int64]bool{}
 
 	for _, record := range records {
-		refGraph.setID(record.GetByIndex(1).(int64))
-		toUnLoad.save(l.getGraphToLoadFromDBResult(record.GetByIndex(0).(neo4j.Path), record.GetByIndex(2).([]interface{}), refGraph, visitedGraphs, loadOptions.Depth))
+		refGraph.setID(record.Values[1].(int64))
+		toUnLoad.save(l.getGraphToLoadFromDBResult(record.Values[0].(neo4j.Path), record.Values[2].([]any), refGraph, visitedGraphs, loadOptions.Depth))
 	}
 
 	for _, g := range toUnLoad.all() {
 		g.setCoordinate(&coordinate{0, 0})
 		var loadDepth = -1
-		if loadDepth, err = l.unloadDBObject(g, unloadedGrahps, loadOptions.Depth, relatedValues); err != nil {
+		if loadDepth, err = unloadDBObject(l, g, unloadedGrahps, loadOptions.Depth, relatedValues); err != nil {
 			return invalidValue, nil, err
 		}
 
@@ -273,8 +290,9 @@ func (l *loader) loadAllOfGraphType(refGraph graph, IDs interface{}, loadOptions
 					eventListener.OnPostLoad(event{object: stored.getValue()})
 				}
 			}
-			if isRoot {
+			if isRoot && reflect.SliceOf(reflect.PointerTo((stored.getValue()).Elem().Type())) == ptrToObjs.Elem().Type() {
 				ptrToObjs.Elem().Set(reflect.Append(ptrToObjs.Elem(), *stored.getValue()))
+
 			}
 			continue
 		}
@@ -286,7 +304,7 @@ func (l *loader) loadAllOfGraphType(refGraph graph, IDs interface{}, loadOptions
 			}
 		}
 
-		if isRoot {
+		if isRoot && reflect.SliceOf(reflect.PointerTo((g.getValue()).Elem().Type())) == ptrToObjs.Elem().Type() {
 			ptrToObjs.Elem().Set(reflect.Append(ptrToObjs.Elem(), *g.getValue()))
 		}
 	}
@@ -294,10 +312,10 @@ func (l *loader) loadAllOfGraphType(refGraph graph, IDs interface{}, loadOptions
 	return ptrToObjs.Elem(), toUnLoad, nil
 }
 
-func (l *loader) getGraphToLoadFromDBResult(path neo4j.Path, isDirectionInverted []interface{}, refGraph graph, visitedGraphs store, depth int) graph {
+func (l *loader) getGraphToLoadFromDBResult(path neo4j.Path, isDirectionInverted []any, refGraph graph, visitedGraphs store, depth int) graph {
 
-	nodes := path.Nodes()
-	relationships := path.Relationships()
+	nodes := path.Nodes
+	relationships := path.Relationships
 	internalGraphType := reflect.TypeOf(refGraph)
 	graphToLoadType := refGraph.getValue().Type().Elem()
 	ID := refGraph.getID()
@@ -305,32 +323,35 @@ func (l *loader) getGraphToLoadFromDBResult(path neo4j.Path, isDirectionInverted
 	graphToLoad := visitedGraphs.get(refGraph)
 
 	for index, neoRelationship := range relationships {
+		if len(nodes) <= index+1 {
+			continue
+		}
 		from := nodes[index]
 		to := nodes[index+1]
 
-		if visitedGraphs.relationship(neoRelationship.Id()) == nil {
+		if visitedGraphs.relationship(neoRelationship.Id) == nil {
 
 			var fromNode, toNode graph
-			if fromNode = visitedGraphs.node(from.Id()); fromNode == nil {
-				labels := from.Labels()
+			if fromNode = visitedGraphs.node(from.Id); fromNode == nil {
+				labels := from.Labels
 				sort.Strings(labels)
 				fromNode = &node{
-					properties:    from.Props(),
+					properties:    from.Props,
 					label:         strings.Join(labels, labelsDelim),
 					relationships: map[int64]graph{}}
-				fromNode.setID(from.Id())
-				fromNode.getProperties()[idPropertyName] = from.Id()
+				fromNode.setID(from.Id)
+				fromNode.getProperties()[idPropertyName] = from.Id
 				visitedGraphs.save(fromNode)
 			}
-			if toNode = visitedGraphs.node(to.Id()); toNode == nil {
-				labels := to.Labels()
+			if toNode = visitedGraphs.node(to.Id); toNode == nil {
+				labels := to.Labels
 				sort.Strings(labels)
 				toNode = &node{
-					properties:    to.Props(),
+					properties:    to.Props,
 					label:         strings.Join(labels, labelsDelim),
 					relationships: map[int64]graph{}}
-				toNode.setID(to.Id())
-				toNode.getProperties()[idPropertyName] = to.Id()
+				toNode.setID(to.Id)
+				toNode.getProperties()[idPropertyName] = to.Id
 				visitedGraphs.save(toNode)
 			}
 
@@ -340,11 +361,11 @@ func (l *loader) getGraphToLoadFromDBResult(path neo4j.Path, isDirectionInverted
 			}
 
 			fromNodeToNode := &relationship{
-				relType:    neoRelationship.Type(),
-				properties: neoRelationship.Props(),
+				relType:    neoRelationship.Type,
+				properties: neoRelationship.Props,
 				nodes:      nodes}
-			fromNodeToNode.setID(neoRelationship.Id())
-			fromNodeToNode.getProperties()[idPropertyName] = neoRelationship.Id()
+			fromNodeToNode.setID(neoRelationship.Id)
+			fromNodeToNode.getProperties()[idPropertyName] = neoRelationship.Id
 			visitedGraphs.save(fromNodeToNode)
 
 			fromNode.setRelatedGraph(fromNodeToNode)
@@ -352,12 +373,12 @@ func (l *loader) getGraphToLoadFromDBResult(path neo4j.Path, isDirectionInverted
 
 			if graphToLoad == nil {
 				if internalGraphType == typeOfPrivateNode {
-					if from.Id() == ID {
+					if from.Id == ID {
 						graphToLoad = fromNode
-					} else if to.Id() == ID {
+					} else if to.Id == ID {
 						graphToLoad = toNode
 					}
-				} else if internalGraphType == typeOfPrivateRelationship && neoRelationship.Id() == ID {
+				} else if internalGraphType == typeOfPrivateRelationship && neoRelationship.Id == ID {
 					graphToLoad = fromNodeToNode
 				}
 			}
@@ -366,11 +387,11 @@ func (l *loader) getGraphToLoadFromDBResult(path neo4j.Path, isDirectionInverted
 
 	if graphToLoad == nil && len(relationships) == 0 {
 		node := &node{
-			properties:    nodes[0].Props(),
-			label:         strings.Join(nodes[0].Labels(), labelsDelim),
+			properties:    nodes[0].Props,
+			label:         strings.Join(nodes[0].Labels, labelsDelim),
 			relationships: map[int64]graph{}}
-		node.setID(nodes[0].Id())
-		node.getProperties()[idPropertyName] = nodes[0].Id()
+		node.setID(nodes[0].Id)
+		node.getProperties()[idPropertyName] = nodes[0].Id
 		visitedGraphs.save(node)
 		graphToLoad = node
 	}
@@ -383,7 +404,7 @@ func (l *loader) getGraphToLoadFromDBResult(path neo4j.Path, isDirectionInverted
 	return graphToLoad
 }
 
-func (l *loader) unloadDBObject(g graph, unloadedGrahps store, depth int, relatedValues map[reflect.Type]map[int64]map[int64]bool) (int, error) {
+func unloadDBObject(l *loader, g graph, unloadedGrahps store, depth int, relatedValues map[reflect.Type]map[int64]map[int64]bool) (int, error) {
 
 	var (
 		err                               error
@@ -422,7 +443,6 @@ func (l *loader) unloadDBObject(g graph, unloadedGrahps store, depth int, relate
 			}
 			unloadedGrahps.save(first)
 		}
-
 		loadedDepth = first.getCoordinate().depth
 
 		if relatedValues[reflect.TypeOf(first)][first.getID()] == nil {
@@ -451,14 +471,12 @@ func (l *loader) unloadDBObject(g graph, unloadedGrahps store, depth int, relate
 					delete(first.getRelatedGraphs(), relatedGraph.getID())
 					continue
 				}
-
 				typeOfGraphField := elem(graphfield.getStructField().Type)
 				if graphFieldMetadata, err = l.registry.get(typeOfGraphField); err != nil {
 					return -1, err
 				}
 
 				value := reflect.New(typeOfGraphField.Elem())
-
 				addDomainObject(graphfield, value)
 				relatedGraph.setValue(&value)
 

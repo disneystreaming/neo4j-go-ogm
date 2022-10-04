@@ -36,8 +36,8 @@ type graph interface {
 	setValue(*reflect.Value)
 	getValue() *reflect.Value
 
-	setProperties(map[string]interface{})
-	getProperties() map[string]interface{}
+	setProperties(map[string]any)
+	getProperties() map[string]any
 
 	setLabel(label string)
 	getLabel() string

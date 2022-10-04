@@ -48,7 +48,7 @@ func newNodeMetadata() *nodeMetadata {
 }
 
 func (nm *nodeMetadata) getLabel(v reflect.Value) (string, error) {
-	if !v.IsValid() || !v.Elem().IsValid() || v.IsZero() || v.Elem().IsZero() || nm.runtimeLabelsStructField == nil {
+	if !v.IsValid() || nm.runtimeLabelsStructField == nil || !v.Elem().IsValid() || v.IsZero() || v.Elem().IsZero() {
 		return nm.structLabel, nil
 	}
 
@@ -223,7 +223,7 @@ func extractRelationshipTypeA(n *node, ID func(graph), registry *registry) func(
 					Value:      &value,
 					nodes:      map[int64]graph{startNode: node, endNode: n},
 					relType:    relType,
-					properties: make(map[string]interface{})}
+					properties: make(map[string]any)}
 			}
 
 			if direction == outgoing || direction == undirected {
@@ -231,7 +231,7 @@ func extractRelationshipTypeA(n *node, ID func(graph), registry *registry) func(
 					Value:      &value,
 					nodes:      map[int64]graph{startNode: n, endNode: node},
 					relType:    relType,
-					properties: make(map[string]interface{})}
+					properties: make(map[string]any)}
 			}
 			ID(relationshipA.nodes[startNode])
 			ID(relationshipA.nodes[endNode])

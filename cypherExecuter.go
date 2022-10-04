@@ -23,40 +23,45 @@
 package gogm
 
 import (
-	"github.com/neo4j/neo4j-go-driver/neo4j"
+	"fmt"
+
+	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )
 
-type transactionExecuter func(work neo4j.TransactionWork, configurers ...func(*neo4j.TransactionConfig)) (interface{}, error)
+type transactionExecuter func(work neo4j.TransactionWork, configurers ...func(*neo4j.TransactionConfig)) (any, error)
 
 type cypherExecuter struct {
 	driver      neo4j.Driver
 	accessMode  neo4j.AccessMode
-	transaction *transaction
+	transaction *Transaction
 }
 
-func newCypherExecuter(driver neo4j.Driver, accessMode neo4j.AccessMode, t *transaction) *cypherExecuter {
+//Creates a new instance of a `cypherExecuter` from provided neo4j configuration parameters, using an optional `transaction`
+func newCypherExecuter(driver neo4j.Driver, accessMode neo4j.AccessMode, t *Transaction) *cypherExecuter {
 	return &cypherExecuter{driver, accessMode, nil}
 }
 
-func (c *cypherExecuter) execTransaction(te transactionExecuter, cql string, params map[string]interface{}) (neo4j.Result, error) {
-	var (
-		err    error
-		result neo4j.Result
-	)
+//Executes a given cql statement using the provided params within the context of the provided `transactionExecuter`
+func (c *cypherExecuter) execTransaction(te transactionExecuter, cql string, params map[string]any) ([]*neo4j.Record, error) {
 
-	if _, err = te(func(tx neo4j.Transaction) (interface{}, error) {
-		if result, err = tx.Run(cql, params); err != nil {
+	if records, err := te(func(tx neo4j.Transaction) (any, error) {
+
+		if result, err := tx.Run(cql, params); err != nil {
 			return nil, err
+		} else {
+			return result.Collect()
 		}
-		return result, nil
 	}); err != nil {
 		return nil, err
+	} else if resultAsRecords, isRecordSlice := records.([]*neo4j.Record); isRecordSlice {
+		return resultAsRecords, nil
+	} else {
+		return nil, fmt.Errorf("records returned by query, but not in expected form")
 	}
-
-	return result, nil
 }
 
-func (c *cypherExecuter) exec(cql string, params map[string]interface{}) (neo4j.Result, error) {
+//Executes a given cql statements using the provided params within the context of the c's own state.
+func (c *cypherExecuter) exec(cql string, params map[string]any) ([]*neo4j.Record, error) {
 	var (
 		result  neo4j.Result
 		session neo4j.Session
@@ -66,22 +71,27 @@ func (c *cypherExecuter) exec(cql string, params map[string]interface{}) (neo4j.
 		if result, err = c.transaction.run(cql, params); err != nil {
 			return nil, err
 		}
-		return result, nil
+		return result.Collect()
 	}
 
-	if session, err = c.driver.Session(c.accessMode); err != nil {
-		return nil, err
-	}
-	defer session.Close()
+	session = c.driver.NewSession(neo4j.SessionConfig{
+		AccessMode: c.accessMode,
+	})
 
 	transactionMode := session.ReadTransaction
 	if c.accessMode == neo4j.AccessModeWrite {
 		transactionMode = session.WriteTransaction
 	}
-
-	return c.execTransaction(transactionMode, cql, params)
+	if result, resErr := c.execTransaction(transactionMode, cql, params); resErr != nil {
+		session.Close()
+		return nil, resErr
+	} else {
+		session.Close()
+		return result, nil
+	}
 }
 
-func (c *cypherExecuter) setTransaction(transaction *transaction) {
+//Setter function for `transaction`.
+func (c *cypherExecuter) setTransaction(transaction *Transaction) {
 	c.transaction = transaction
 }

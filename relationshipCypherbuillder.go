@@ -23,13 +23,15 @@
 package gogm
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 )
 
 type relationshipQueryBuilder struct {
 	r               *relationship
 	registry        *registry
-	deltaProperties map[string]interface{}
+	deltaProperties map[string]any
 }
 
 func (rqb relationshipQueryBuilder) getGraph() graph {
@@ -55,7 +57,7 @@ func (rqb relationshipQueryBuilder) isGraphDirty() bool {
 	return rqb.r.getID() < 0 || len(rqb.deltaProperties) > 0
 }
 
-func (rqb relationshipQueryBuilder) getCreate() (string, string, map[string]interface{}, map[string]graph) {
+func (rqb relationshipQueryBuilder) getCreate() (string, string, map[string]any, map[string]graph) {
 	var (
 		r         = rqb.r
 		startSign = r.nodes[startNode].getSignature()
@@ -67,7 +69,7 @@ func (rqb relationshipQueryBuilder) getCreate() (string, string, map[string]inte
 	return "", create, nil, map[string]graph{startSign: r.nodes[startNode], endSign: r.nodes[endNode]}
 }
 
-func (rqb relationshipQueryBuilder) getMatch() (string, map[string]interface{}, map[string]graph) {
+func (rqb relationshipQueryBuilder) getMatch() (string, map[string]any, map[string]graph) {
 	var (
 		r         = rqb.r
 		startSign = r.nodes[startNode].getSignature()
@@ -79,12 +81,12 @@ func (rqb relationshipQueryBuilder) getMatch() (string, map[string]interface{}, 
 	return match, nil, map[string]graph{startSign: r.nodes[startNode], endSign: r.nodes[endNode]}
 }
 
-func (rqb relationshipQueryBuilder) getSet() (string, map[string]interface{}) {
+func (rqb relationshipQueryBuilder) getSet() (string, map[string]any) {
 	var (
 		r          = rqb.r
 		rSign      = r.getSignature()
-		properties = map[string]interface{}{}
-		parameters = map[string]interface{}{}
+		properties = map[string]any{}
+		parameters = map[string]any{}
 		propCQLRef = rSign + "Properties"
 		set        string
 	)
@@ -103,21 +105,21 @@ func (rqb relationshipQueryBuilder) getSet() (string, map[string]interface{}) {
 	return set, parameters
 }
 
-func (rqb relationshipQueryBuilder) getLoadAll(IDs interface{}, lo *LoadOptions) (string, map[string]interface{}) {
+func (rqb relationshipQueryBuilder) getLoadAll(IDs any, lo *LoadOptions) (string, map[string]any) {
 
 	var (
 		depth                   = strconv.Itoa(lo.Depth)
 		metadata, _             = rqb.registry.get(rqb.r.getValue().Type())
 		customIDPropertyName, _ = metadata.getCustomID(*rqb.r.getValue())
-		parameters              = map[string]interface{}{}
+		parameters              = map[string]any{}
 	)
 
 	if lo.Depth == infiniteDepth {
 		depth = ""
 	}
-
-	match := `MATCH path = ()-[*0..` + depth + `]-()-[r:` + rqb.r.getLabel() + `]-()-[*0..` + depth + `]-()
-	`
+	matchOutString := fmt.Sprintf(`MATCH path = ()-[*0..%s]->()-[r:%s]->()-[*0..%s]->()`, depth, rqb.r.getLabel(), depth)
+	matchInString := fmt.Sprintf(`MATCH path = ()<-[*0..%s]-()<-[r:%s]-()<-[*0..%s]-()`, depth, rqb.r.getLabel(), depth)
+	unionString := `UNION`
 
 	var filter string
 	if IDs != nil {
@@ -134,17 +136,17 @@ func (rqb relationshipQueryBuilder) getLoadAll(IDs interface{}, lo *LoadOptions)
 	WITH  r, path, index, [i in index | CASE WHEN nodes(path)[i] = startNode(relationships(path)[i]) THEN false ELSE true END] as isDirectionInverted
 	RETURN path, ID(r), isDirectionInverted
 	`
-
-	return match + filter + end, parameters
+	match := fmt.Sprintf("%s", strings.Join([]string{matchOutString, filter, end, unionString, matchInString, filter, end}, " "))
+	return match, parameters
 }
 
-func (rqb relationshipQueryBuilder) getDeleteAll() (string, map[string]interface{}) {
+func (rqb relationshipQueryBuilder) getDeleteAll() (string, map[string]any) {
 	return `MATCH ()-[r:` + rqb.r.getType() + `]-()
 	DELETE r
 	RETURN ID(r)`, nil
 }
 
-func (rqb relationshipQueryBuilder) getDelete() (string, map[string]interface{}, map[string]graph) {
+func (rqb relationshipQueryBuilder) getDelete() (string, map[string]any, map[string]graph) {
 	rSign := rqb.r.getSignature()
 	delete, _, depedencies := rqb.getMatch()
 	delete += `DELETE ` + rSign + ` RETURN ID(` + rSign + `)
@@ -152,6 +154,6 @@ func (rqb relationshipQueryBuilder) getDelete() (string, map[string]interface{},
 	return delete, nil, depedencies
 }
 
-func (rqb relationshipQueryBuilder) getCountEntitiesOfType() (string, map[string]interface{}) {
+func (rqb relationshipQueryBuilder) getCountEntitiesOfType() (string, map[string]any) {
 	return `MATCH ()-[r:` + rqb.r.getType() + `]->() RETURN count(r) as count`, nil
 }
